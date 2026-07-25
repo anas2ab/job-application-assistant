@@ -1,0 +1,46 @@
+# Personal Jobdesk data
+profile.json
+applications.json
+documents.json
+job_application_tracker.xlsx
+*.resume.txt
+*_resume.txt
+*_cover-letter.txt
+resumes/
+exports/
+uploads/
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+config.local.py
+config_local.py
+secrets.json
+credentials.json
+*.pem
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Editors and operating systems
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Runtime files
+*.log
+*.pid
+tmp/
+temp/

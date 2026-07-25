@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Jobdesk — your AI-powered job application workspace">
+  <title>Jobdesk — Application workspace</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=Manrope:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <aside class="sidebar">
+    <a class="brand" href="#"><span>J</span> jobdesk</a>
+    <nav aria-label="Main navigation">
+      <button class="nav-item active" data-view="discover"><span>⌕</span> Discover <b id="discoverCount">0</b></button>
+      <button class="nav-item" data-view="applications"><span>◫</span> Applications <b id="applicationCount">0</b></button>
+      <button class="nav-item" data-view="documents"><span>≡</span> Documents</button>
+      <button class="nav-item" data-view="analytics"><span>↗</span> Analytics</button>
+      <button class="nav-item" data-view="profile"><span>◎</span> Profile</button>
+    </nav>
+    <div class="source-status">
+      <p>SEARCH COVERAGE <button title="Source settings">•••</button></p>
+      <ul>
+        <li><i class="live"></i> LinkedIn <span>126</span></li>
+        <li><i class="live"></i> Greenhouse <span>43</span></li>
+        <li><i class="live"></i> Lever <span>29</span></li>
+        <li><i class="live"></i> Ashby <span>18</span></li>
+        <li><i class="live"></i> Workday <span>12</span></li>
+        <li><i class="live"></i> SmartRecruiters <span>8</span></li>
+        <li><i></i> Career sites <span>17</span></li>
+      </ul>
+    </div>
+    <div class="profile">
+      <div class="avatar" id="profileAvatar">?</div><div><strong id="profileName">Set up profile</strong><small id="profileLocation">Local workspace</small></div><button>⌄</button>
+    </div>
+  </aside>
+
+  <main>
+    <header>
+      <div>
+        <p class="eyebrow" id="eyebrow">SATURDAY, JULY 25</p>
+        <h1 id="pageTitle">Your job search workspace</h1>
+        <p id="subtitle">Your search found <strong>14 strong matches</strong> since yesterday.</p>
+      </div>
+      <div class="header-actions"><button class="icon-button" aria-label="Notifications">♢<i></i></button><button class="primary" id="searchNow">↻ Search now</button></div>
+    </header>
+
+    <section class="workspace" id="discoverView">
+      <div class="metrics">
+        <div><span>DISCOVERED</span><strong id="metricDiscovered">0</strong><small>saved matching roles</small></div>
+        <div><span>READY TO APPLY</span><strong id="metricReady">0</strong><small>in review or tailoring</small></div>
+        <div><span>FOLLOW-UPS DUE</span><strong id="metricFollowups">0</strong><small class="urgent">due today or overdue</small></div>
+        <div><span>RESPONSE RATE</span><strong id="metricResponse">0%</strong><small>from tracked applications</small></div>
+      </div>
+
+      <div class="queue-head">
+        <div><h2>Top matches</h2><p>Ranked against your resume and preferences.</p></div>
+        <div class="filters"><button class="active">All</button><button>Remote</button><button>Preferred</button><button>90+ match</button><button class="tune">☷</button></div>
+      </div>
+      <div class="job-list" id="jobList" aria-live="polite"></div>
+    </section>
+
+    <section class="workspace hidden" id="applicationsView">
+      <div class="section-title"><div><h2>Application pipeline</h2><p>Every role, next step, and follow-up in one place.</p></div></div>
+      <div class="pipeline" id="pipeline"></div>
+    </section>
+
+    <section class="workspace hidden" id="documentsView">
+      <div class="section-title"><div><h2>Tailored documents</h2><p>Role-specific resumes, cover letters, and screening answers.</p></div></div>
+      <div class="document-library" id="documentLibrary"></div>
+    </section>
+
+    <section class="workspace hidden" id="analyticsView">
+      <div class="section-title"><div><h2>Search performance</h2><p>Conversion from discovery through interview.</p></div><select><option>Last 30 days</option><option>Last 90 days</option></select></div>
+      <div class="analytics-grid">
+        <div class="funnel" id="funnel"></div>
+        <div class="source-chart" id="sourceChart"><h3>Response rate by source</h3></div>
+      </div>
+    </section>
+
+    <section class="workspace hidden" id="profileView">
+      <div class="section-title"><div><h2>Search profile</h2><p>Your resume and preferences power matching and tailored documents.</p></div></div>
+      <form class="profile-form" id="profileForm">
+        <label>Full name<input name="name" autocomplete="name" required></label>
+        <label>Email<input name="email" type="email" autocomplete="email"></label>
+        <label>Phone<input name="phone" autocomplete="tel"></label>
+        <label>Location<input name="location"></label>
+        <label class="wide">Target job titles<input name="target_titles" placeholder="Separate titles with commas"></label>
+        <label class="wide">Core skills<input name="skills" placeholder="Separate skills with commas"></label>
+        <label class="wide">Preferred locations<input name="locations" placeholder="Remote, your city, your country"></label>
+        <label>Work authorization<input name="work_authorization"></label>
+        <label>Salary expectation<input name="salary_expectation"></label>
+        <label class="wide">Resume text<textarea name="resume" rows="14" placeholder="Paste the text from your current resume here. Keep metrics and achievements for better tailoring."></textarea></label>
+        <div class="form-actions"><span id="profileStatus">Saved locally on this computer.</span><button class="primary" type="submit">Save profile</button></div>
+      </form>
+    </section>
+  </main>
+
+  <dialog id="jobDialog">
+    <button class="close" aria-label="Close">×</button>
+    <div id="dialogContent"></div>
+  </dialog>
+  <div class="toast" id="toast"></div>
+  <script src="/app.js"></script>
+</body>
+</html>
