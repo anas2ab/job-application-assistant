@@ -53,6 +53,42 @@ class JobdeskTests(unittest.TestCase):
     def test_new_install_starts_without_placeholder_jobs(self):
         self.assertEqual(server.load_data(), [])
 
+    def test_onsite_jobs_must_be_in_toronto(self):
+        eligible, _, _ = server.eligibility({
+            "location": "Vancouver, Canada",
+            "description": "Work from our office. Annual salary $180,000–$210,000 CAD.",
+        })
+        self.assertFalse(eligible)
+        eligible, _, _ = server.eligibility({
+            "location": "Toronto, Canada",
+            "description": "Work from our office. Annual salary $180,000–$210,000 CAD.",
+        })
+        self.assertTrue(eligible)
+
+    def test_remote_jobs_must_allow_canada_or_worldwide(self):
+        canada, _, _ = server.eligibility({"location": "Remote - Canada", "description": ""})
+        worldwide, _, _ = server.eligibility({"location": "Remote", "description": "Open to candidates worldwide."})
+        us_only, _, _ = server.eligibility({"location": "Remote - USA", "description": ""})
+        self.assertTrue(canada)
+        self.assertTrue(worldwide)
+        self.assertFalse(us_only)
+
+    def test_published_salary_minimum_must_exceed_threshold(self):
+        below, salary, _ = server.eligibility({
+            "location": "Toronto",
+            "description": "Annual salary range: $145,000–$190,000 CAD.",
+        })
+        above, _, _ = server.eligibility({
+            "location": "Toronto",
+            "description": "Annual salary range: $151,000–$190,000 CAD.",
+        })
+        unlisted, display, _ = server.eligibility({"location": "Toronto", "description": "Competitive pay."})
+        self.assertFalse(below)
+        self.assertEqual(salary, "$145,000–$190,000 CAD")
+        self.assertTrue(above)
+        self.assertTrue(unlisted)
+        self.assertEqual(display, "Not listed")
+
 
 if __name__ == "__main__":
     unittest.main()

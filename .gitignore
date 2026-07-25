@@ -1,6 +1,7 @@
 # Personal Jobdesk data
 profile.json
 applications.json
+applications.json.backup
 documents.json
 job_application_tracker.xlsx
 *.resume.txt
@@ -42,5 +43,6 @@ htmlcov/
 # Runtime files
 *.log
 *.pid
+*.backup
 tmp/
 temp/

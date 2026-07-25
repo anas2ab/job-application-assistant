@@ -20,6 +20,7 @@ from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 from companies import GREENHOUSE_COMPANIES, LEVER_COMPANIES
+from config import MINIMUM_SALARY_CAD, USD_TO_CAD
 ROOT = Path(__file__).parent
 WEB_ROOT = ROOT / "web"
 DATA_PATH = ROOT / "applications.json"
@@ -70,6 +71,79 @@ def load_profile() -> dict:
 
 def clean_html(value: str) -> str:
     return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html.unescape(value or ""))).strip()
+
+
+def extract_salary(text: str, location: str = "") -> Optional[dict]:
+    """Extract an annual CAD/USD salary range when a posting publishes one."""
+    salary_contexts = re.findall(
+        r"(?i)(?:salary|compensation|base pay|pay range|annual base)[^.!?\n]{0,180}",
+        text,
+    )
+    contexts = salary_contexts or [text]
+    number = r"(\d{2,3}(?:,\d{3})+|\d{2,3}(?:\.\d+)?\s*[kK])"
+    range_pattern = re.compile(
+        rf"(?i)(CAD|USD|CA\$|US\$|\$)?\s*{number}\s*(?:-|–|—|to)\s*"
+        rf"(CAD|USD|CA\$|US\$|\$)?\s*{number}\s*(CAD|USD)?"
+    )
+    for context in contexts:
+        match = range_pattern.search(context)
+        if not match:
+            continue
+
+        def amount(value: str) -> int:
+            normalized = value.replace(",", "").replace(" ", "")
+            return round(float(normalized[:-1]) * 1000) if normalized.lower().endswith("k") else round(float(normalized))
+
+        low, high = amount(match.group(2)), amount(match.group(4))
+        if low < 40_000 or high < low:
+            continue
+        currency_markers = " ".join(filter(None, (match.group(1), match.group(3), match.group(5)))).upper()
+        nearby = context.upper()
+        if "CAD" in currency_markers or "CA$" in currency_markers or " CAD" in nearby:
+            currency = "CAD"
+        elif "USD" in currency_markers or "US$" in currency_markers or " USD" in nearby:
+            currency = "USD"
+        else:
+            currency = "CAD" if "canada" in location.lower() or "toronto" in location.lower() else "USD"
+        low_cad = round(low * USD_TO_CAD) if currency == "USD" else low
+        high_cad = round(high * USD_TO_CAD) if currency == "USD" else high
+        return {
+            "low": low,
+            "high": high,
+            "currency": currency,
+            "low_cad": low_cad,
+            "high_cad": high_cad,
+            "display": f"${low:,}–${high:,} {currency}",
+        }
+    return None
+
+
+def eligibility(raw: dict) -> tuple[bool, str, str]:
+    """Apply the Toronto/remote-Canada and compensation requirements."""
+    location = raw.get("location", "")
+    description = raw.get("description", "")
+    location_text = location.lower()
+    full_text = f"{location} {description}".lower()
+    is_remote = "remote" in full_text
+    is_hybrid = "hybrid" in full_text
+
+    if is_remote:
+        worldwide = any(term in full_text for term in ("worldwide", "anywhere", "work from anywhere", "global remote"))
+        canada = any(term in full_text for term in ("canada", "canadian"))
+        restricted_elsewhere = any(term in location_text for term in (
+            "united states", "usa", "u.s.", "uk", "united kingdom", "emea",
+            "europe", "australia", "india", "latin america",
+        ))
+        generic_remote = location_text.strip() in {"remote", "remote work", "fully remote"}
+        if not (worldwide or canada or (generic_remote and not restricted_elsewhere)):
+            return False, "Not listed", "Remote role is not available in Canada or worldwide"
+    elif "toronto" not in full_text:
+        return False, "Not listed", "On-site or hybrid role is not based in Toronto"
+
+    salary = extract_salary(description, location)
+    if salary and salary["low_cad"] <= MINIMUM_SALARY_CAD:
+        return False, salary["display"], f"Published minimum is not above CAD ${MINIMUM_SALARY_CAD:,}"
+    return True, salary["display"] if salary else "Not listed", "Eligible"
 
 
 def fetch_json(url: str) -> object:
@@ -135,6 +209,9 @@ def sync_jobs(sources: Optional[List[str]] = None) -> dict:
         normalized = raw["url"].lower().rstrip("/")
         if normalized in existing:
             continue
+        eligible, salary, _ = eligibility(raw)
+        if not eligible:
+            continue
         score, skills = profile_score(raw, profile)
         if score < 35:
             continue
@@ -142,7 +219,7 @@ def sync_jobs(sources: Optional[List[str]] = None) -> dict:
         data.append({
             **raw, "id": f"job-{uuid.uuid4().hex[:10]}", "score": score, "skills": skills,
             "work_type": work_type, "status": "Review", "discovered": date.today().isoformat(),
-            "applied": None, "follow_up": None, "salary": "Not listed", "notes": "",
+            "applied": None, "follow_up": None, "salary": salary, "notes": "",
         })
         existing.add(normalized)
         added += 1

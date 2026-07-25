@@ -3,14 +3,15 @@ const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const safe = (value="") => String(value).replace(/[&<>"']/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
 const toast = (message) => { const el=$("#toast"); el.textContent=message; el.classList.add("show"); setTimeout(()=>el.classList.remove("show"),2200); };
+const discoverableJobs = () => jobs.filter(job => ["Review", "Tailoring"].includes(job.status));
 
 async function loadJobs() {
   try { jobs = await fetch("/api/jobs").then(r => r.json()); }
   catch { jobs = []; }
-  renderJobs(jobs);
+  renderJobs(discoverableJobs());
   renderPipeline();
   renderDocuments();
-  $("#discoverCount").textContent = jobs.length;
+  $("#discoverCount").textContent = discoverableJobs().length;
   $("#applicationCount").textContent = jobs.filter(job => ["Applied","Interview","Offer","Rejected"].includes(job.status)).length;
   loadAnalytics();
 }
@@ -57,7 +58,15 @@ async function openJob(id) {
   $(".track").onclick = async () => {
     const next = job.status === "Applied" ? "Interview" : "Applied";
     const updated = await fetch(`/api/jobs/${id}`, {method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({status:next})}).then(r=>r.json());
-    Object.assign(job, updated); dialog.close(); renderPipeline(); loadAnalytics(); toast(next === "Applied" ? "Application tracked · follow-up set for 7 days" : "Interview recorded");
+    Object.assign(job, updated);
+    dialog.close();
+    renderJobs(discoverableJobs());
+    renderPipeline();
+    renderDocuments();
+    $("#discoverCount").textContent = discoverableJobs().length;
+    $("#applicationCount").textContent = jobs.filter(item => ["Applied","Interview","Offer","Rejected"].includes(item.status)).length;
+    loadAnalytics();
+    toast(next === "Applied" ? "Application tracked · removed from Discover" : "Interview recorded");
   };
 }
 
@@ -83,7 +92,7 @@ $$(".nav-item").forEach(btn => btn.onclick = () => {
 $(".close").onclick=()=>$("#jobDialog").close();
 $("#jobDialog").onclick=e=>{if(e.target===$("#jobDialog"))$("#jobDialog").close()};
 $("#searchNow").onclick=async()=>{const btn=$("#searchNow");btn.disabled=true;btn.textContent="↻ Searching…";try{const result=await fetch("/api/sync",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sources:["Greenhouse","Lever"]})}).then(r=>r.json());toast(`${result.scanned} jobs scanned · ${result.added} new matches`);await loadJobs()}catch{toast("Sync failed — check your internet connection")}finally{btn.disabled=false;btn.textContent="↻ Search now"}};
-$$(".filters button:not(.tune)").forEach(btn=>btn.onclick=()=>{ $$(".filters button").forEach(b=>b.classList.remove("active"));btn.classList.add("active");const key=btn.textContent;const preferred=($('[name="locations"]').value||"").toLowerCase().split(",").map(x=>x.trim()).filter(Boolean);renderJobs(key==="Remote"?jobs.filter(j=>j.location.toLowerCase().includes("remote")):key==="Preferred"?jobs.filter(j=>preferred.some(place=>j.location.toLowerCase().includes(place))):key.includes("90")?jobs.filter(j=>j.score>=90):jobs)});
+$$(".filters button:not(.tune)").forEach(btn=>btn.onclick=()=>{ $$(".filters button").forEach(b=>b.classList.remove("active"));btn.classList.add("active");const key=btn.textContent;const available=discoverableJobs();const preferred=($('[name="locations"]').value||"").toLowerCase().split(",").map(x=>x.trim()).filter(Boolean);renderJobs(key==="Remote"?available.filter(j=>j.location.toLowerCase().includes("remote")):key==="Preferred"?available.filter(j=>preferred.some(place=>j.location.toLowerCase().includes(place))):key.includes("90")?available.filter(j=>j.score>=90):available)});
 
 async function loadProfile() {
   const profile = await fetch("/api/profile").then(r=>r.json());

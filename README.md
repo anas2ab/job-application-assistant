@@ -19,6 +19,8 @@ application materials, track follow-ups, and measure what is working.
 
 - Searches configured Greenhouse and Lever company boards for live openings
 - Deduplicates results and scores each job against your titles, skills, and locations
+- Keeps only Toronto-based on-site/hybrid roles and remote roles open to Canada or worldwide
+- Excludes postings whose published salary range starts at or below CAD 150,000
 - Explains which skills contributed to each match
 - Produces editable resume drafts, cover letters, and screening answers
 - Opens the employer's official application page
@@ -52,6 +54,18 @@ To stop Jobdesk, return to the terminal and press `Control+C`.
 
 New installations begin with an empty job list. Only jobs returned by connected
 live sources are added.
+
+### Eligibility rules
+
+Jobdesk applies these requirements before saving a discovered role:
+
+- **On-site and hybrid:** the posting must be based in Toronto.
+- **Remote:** the posting must accept candidates in Canada or worldwide.
+- **Salary not published:** the role remains eligible.
+- **Salary published:** the minimum of the annual range must exceed CAD 150,000.
+
+USD salary ranges are converted using `USD_TO_CAD` in [config.py](config.py).
+Update that value when exchange rates materially change.
 
 ## Apply to a job
 

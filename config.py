@@ -44,4 +44,11 @@ PREFERRED_LOCATIONS = [
 
 MINIMUM_SCORE = 65
 
+# Hard eligibility rules used by the web application.
+MINIMUM_SALARY_CAD = 150_000
+
+# Used only when a posting publishes USD compensation. Keep this configurable
+# because exchange rates change over time.
+USD_TO_CAD = 1.35
+
 TRACKER_PATH = "job_application_tracker.xlsx"
