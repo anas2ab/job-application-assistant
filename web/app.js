@@ -38,7 +38,8 @@ async function openJob(id) {
     <div class="match-line"><span>${job.score}% match</span><span>${safe(job.work_type)}</span><span>${safe(job.status)}</span></div>
     <div class="dialog-section"><h3>Why this is a strong match</h3>${reasons}</div>
     <div class="dialog-section"><h3>Tailored application</h3><div class="doc-tabs"><button class="active" data-doc="resume_summary">Resume</button><button data-doc="cover_letter">Cover letter</button><button data-doc="answers">Screening answers</button></div><textarea class="doc-copy" aria-label="Editable tailored document">${safe(docs.resume_summary)}</textarea><div class="doc-tools"><button class="save-doc">Save edits</button><a class="download-doc" href="/api/jobs/${job.id}/documents/resume.txt">Download .txt</a></div></div>
-  </div><div class="dialog-actions"><button class="track">Update status</button><a class="apply external" href="${safe(job.url)}" target="_blank" rel="noopener">Open application ↗</a></div>`;
+  </div><div class="dialog-actions"><button class="dismiss">Dismiss</button><button class="track">Update status</button><a class="apply external" href="${safe(job.url)}" target="_blank" rel="noopener">Open application ↗</a></div>
+  <div class="dismiss-panel hidden"><h3>Why isn’t this role a match?</h3><p>Your choice can prevent similar jobs from appearing in future searches.</p><select id="dismissReason"><option value="location">Location</option><option value="company">Company</option><option value="title">Role title</option><option value="keyword">Keyword</option><option value="other">Other — don’t create a rule</option></select><input id="dismissDetail" placeholder="Keyword or optional note"><div><button class="cancel-dismiss">Cancel</button><button class="confirm-dismiss">Dismiss job</button></div></div>`;
   const dialog = $("#jobDialog"); dialog.showModal();
   let activeDoc = "resume_summary";
   $$(".doc-tabs button").forEach(btn => btn.onclick = () => {
@@ -68,17 +69,35 @@ async function openJob(id) {
     loadAnalytics();
     toast(next === "Applied" ? "Application tracked · removed from Discover" : "Interview recorded");
   };
+  $(".dismiss").onclick = () => $(".dismiss-panel").classList.remove("hidden");
+  $(".cancel-dismiss").onclick = () => $(".dismiss-panel").classList.add("hidden");
+  $("#dismissReason").onchange = event => {
+    $("#dismissDetail").placeholder = event.target.value === "keyword" ? "Required keyword to exclude" : "Optional note";
+  };
+  $(".confirm-dismiss").onclick = async () => {
+    const reason = $("#dismissReason").value;
+    const detail = $("#dismissDetail").value.trim();
+    if (reason === "keyword" && !detail) return toast("Enter a keyword to exclude");
+    const result = await fetch(`/api/jobs/${id}/dismiss`, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({reason,detail})}).then(r=>r.json());
+    Object.assign(job, result.job);
+    dialog.close();
+    renderJobs(discoverableJobs());
+    renderPipeline();
+    renderDocuments();
+    $("#discoverCount").textContent = discoverableJobs().length;
+    toast(result.rule ? `Dismissed · future ${reason} matches excluded` : "Job dismissed");
+  };
 }
 
 function renderPipeline() {
   const groups = {Review:[],Tailoring:[],Applied:[],Interview:[]};
-  jobs.forEach(j => (groups[j.status] || groups.Review).push(j));
+  jobs.forEach(j => { if (groups[j.status]) groups[j.status].push(j); });
   $("#pipeline").innerHTML = Object.entries(groups).map(([name,items])=>`<div class="lane"><h3>${name} · ${items.length}</h3>${items.map(j=>`<div class="pipeline-job" data-id="${j.id}"><strong>${safe(j.company)}</strong><small>${safe(j.title)}</small>${j.follow_up?`<em>Follow up ${safe(j.follow_up)}</em>`:""}</div>`).join("")}</div>`).join("");
   $$(".pipeline-job").forEach(row => row.onclick = () => openJob(row.dataset.id));
 }
 
 function renderDocuments() {
-  $("#documentLibrary").innerHTML = jobs.slice(0,12).map(j=>`<div class="document-row"><strong>${safe(j.company)} · ${safe(j.title)}</strong><span>Resume + cover letter</span><span>${safe(j.status)}</span><button data-id="${j.id}">Open</button></div>`).join("");
+  $("#documentLibrary").innerHTML = jobs.filter(j=>j.status!=="Dismissed").slice(0,12).map(j=>`<div class="document-row"><strong>${safe(j.company)} · ${safe(j.title)}</strong><span>Resume + cover letter</span><span>${safe(j.status)}</span><button data-id="${j.id}">Open</button></div>`).join("");
   $$(".document-row button").forEach(btn=>btn.onclick=()=>openJob(btn.dataset.id));
 }
 
@@ -91,7 +110,7 @@ $$(".nav-item").forEach(btn => btn.onclick = () => {
 });
 $(".close").onclick=()=>$("#jobDialog").close();
 $("#jobDialog").onclick=e=>{if(e.target===$("#jobDialog"))$("#jobDialog").close()};
-$("#searchNow").onclick=async()=>{const btn=$("#searchNow");btn.disabled=true;btn.textContent="↻ Searching…";try{const result=await fetch("/api/sync",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sources:["Greenhouse","Lever"]})}).then(r=>r.json());toast(`${result.scanned} jobs scanned · ${result.added} new matches`);await loadJobs()}catch{toast("Sync failed — check your internet connection")}finally{btn.disabled=false;btn.textContent="↻ Search now"}};
+$("#searchNow").onclick=async()=>{const btn=$("#searchNow");btn.disabled=true;btn.textContent="↻ Searching 5 boards…";try{const result=await fetch("/api/sync",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sources:["Greenhouse","Lever","Ashby","SmartRecruiters","Workday"]})}).then(r=>r.json());toast(`${result.scanned} jobs scanned · ${result.added} new matches`);await loadJobs()}catch{toast("Sync failed — check your internet connection")}finally{btn.disabled=false;btn.textContent="↻ Search now"}};
 $$(".filters button:not(.tune)").forEach(btn=>btn.onclick=()=>{ $$(".filters button").forEach(b=>b.classList.remove("active"));btn.classList.add("active");const key=btn.textContent;const available=discoverableJobs();const preferred=($('[name="locations"]').value||"").toLowerCase().split(",").map(x=>x.trim()).filter(Boolean);renderJobs(key==="Remote"?available.filter(j=>j.location.toLowerCase().includes("remote")):key==="Preferred"?available.filter(j=>preferred.some(place=>j.location.toLowerCase().includes(place))):key.includes("90")?available.filter(j=>j.score>=90):available)});
 
 async function loadProfile() {

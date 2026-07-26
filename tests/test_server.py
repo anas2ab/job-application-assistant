@@ -15,6 +15,7 @@ class JobdeskTests(unittest.TestCase):
             DATA_PATH=self.root / "applications.json",
             PROFILE_PATH=self.root / "profile.json",
             DOCUMENTS_PATH=self.root / "documents.json",
+            EXCLUSIONS_PATH=self.root / "exclusions.json",
         )
         self.paths.start()
 
@@ -88,6 +89,29 @@ class JobdeskTests(unittest.TestCase):
         self.assertTrue(above)
         self.assertTrue(unlisted)
         self.assertEqual(display, "Not listed")
+
+    def test_dismissal_rule_blocks_future_matching_jobs(self):
+        job = {
+            "company": "Example Company",
+            "title": "Backend Engineer",
+            "location": "Toronto, Ontario",
+            "description": "Java services",
+        }
+        rule = server.add_exclusion(job, "location")
+        self.assertEqual(rule, {"type": "location", "value": "Toronto, Ontario"})
+        self.assertEqual(server.exclusion_match(job), "location")
+        different_location = {**job, "location": "Remote - Canada"}
+        self.assertIsNone(server.exclusion_match(different_location))
+
+    def test_keyword_rule_matches_title_or_description(self):
+        job = {
+            "company": "Example Company",
+            "title": "Backend Engineer",
+            "location": "Remote - Canada",
+            "description": "Requires regular overnight on-call shifts",
+        }
+        server.add_exclusion(job, "keyword", "overnight on-call")
+        self.assertEqual(server.exclusion_match(job), "keyword")
 
 
 if __name__ == "__main__":

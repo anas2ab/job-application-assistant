@@ -3,6 +3,7 @@ profile.json
 applications.json
 applications.json.backup
 documents.json
+exclusions.json
 job_application_tracker.xlsx
 *.resume.txt
 *_resume.txt

@@ -83,11 +83,11 @@ seven days later.
 
 | Source | Status | Integration approach |
 |---|---:|---|
-| Greenhouse | Connected | Public job-board API |
-| Lever | Connected | Public postings API |
-| Ashby | Planned | Public job-board API |
-| SmartRecruiters | Planned | Public jobs API |
-| Workday | Planned | Company-specific adapters |
+| Greenhouse | Connected | 28 configured public company boards |
+| Lever | Connected | 28 configured public company boards |
+| Ashby | Connected | Public job-board API |
+| SmartRecruiters | Connected | Public Posting API |
+| Workday | Connected | Configured company-specific career-site adapters |
 | Company career sites | Planned | Authorized per-site adapters |
 | LinkedIn | Planned | Saved-search notifications or approved provider |
 

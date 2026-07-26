@@ -19,13 +19,20 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
-from companies import GREENHOUSE_COMPANIES, LEVER_COMPANIES
+from companies import (
+    ASHBY_COMPANIES,
+    GREENHOUSE_COMPANIES,
+    LEVER_COMPANIES,
+    SMARTRECRUITERS_COMPANIES,
+    WORKDAY_COMPANIES,
+)
 from config import MINIMUM_SALARY_CAD, USD_TO_CAD
 ROOT = Path(__file__).parent
 WEB_ROOT = ROOT / "web"
 DATA_PATH = ROOT / "applications.json"
 PROFILE_PATH = ROOT / "profile.json"
 DOCUMENTS_PATH = ROOT / "documents.json"
+EXCLUSIONS_PATH = ROOT / "exclusions.json"
 
 DEFAULT_PROFILE = {
     "name": "",
@@ -67,6 +74,49 @@ def load_json(path: Path, fallback: object) -> object:
 
 def load_profile() -> dict:
     return {**DEFAULT_PROFILE, **load_json(PROFILE_PATH, {})}
+
+
+def load_exclusions() -> dict:
+    defaults = {"locations": [], "companies": [], "titles": [], "keywords": []}
+    saved = load_json(EXCLUSIONS_PATH, {})
+    return {key: list(saved.get(key, [])) for key in defaults}
+
+
+def exclusion_match(raw: dict, exclusions: Optional[dict] = None) -> Optional[str]:
+    exclusions = exclusions or load_exclusions()
+    location = raw.get("location", "").strip().lower()
+    company = raw.get("company", "").strip().lower()
+    title = raw.get("title", "").strip().lower()
+    full_text = f"{title} {raw.get('description', '')}".lower()
+    if any(value.lower() == location for value in exclusions["locations"]):
+        return "location"
+    if any(value.lower() == company for value in exclusions["companies"]):
+        return "company"
+    if any(value.lower() == title for value in exclusions["titles"]):
+        return "title"
+    if any(value.lower() in full_text for value in exclusions["keywords"]):
+        return "keyword"
+    return None
+
+
+def add_exclusion(job: dict, reason: str, detail: str = "") -> Optional[dict]:
+    mapping = {
+        "location": ("locations", job.get("location", "")),
+        "company": ("companies", job.get("company", "")),
+        "title": ("titles", job.get("title", "")),
+        "keyword": ("keywords", detail),
+    }
+    if reason not in mapping:
+        return None
+    group, value = mapping[reason]
+    value = value.strip()
+    if not value:
+        return None
+    exclusions = load_exclusions()
+    if value.lower() not in {existing.lower() for existing in exclusions[group]}:
+        exclusions[group].append(value)
+        EXCLUSIONS_PATH.write_text(json.dumps(exclusions, indent=2))
+    return {"type": reason, "value": value}
 
 
 def clean_html(value: str) -> str:
@@ -152,7 +202,19 @@ def fetch_json(url: str) -> object:
         return json.loads(response.read())
 
 
-def fetch_source(source: str, company: str, token: str) -> list[dict]:
+def fetch_json_post(url: str, payload: dict) -> object:
+    body = json.dumps(payload).encode()
+    request = Request(
+        url,
+        data=body,
+        headers={"User-Agent": "Jobdesk/1.0 (+local job search assistant)", "Content-Type": "application/json"},
+        method="POST",
+    )
+    with urlopen(request, timeout=25) as response:
+        return json.loads(response.read())
+
+
+def fetch_source(source: str, company: str, token: object) -> list[dict]:
     if source == "Greenhouse":
         payload = fetch_json(f"https://boards-api.greenhouse.io/v1/boards/{token}/jobs?content=true")
         raw_jobs = [{
@@ -161,7 +223,7 @@ def fetch_source(source: str, company: str, token: str) -> list[dict]:
             "url": item.get("absolute_url", ""),
             "description": clean_html(item.get("content", "")),
         } for item in payload.get("jobs", [])]
-    else:
+    elif source == "Lever":
         payload = fetch_json(f"https://api.lever.co/v0/postings/{token}?mode=json")
         raw_jobs = [{
             "title": item.get("text", ""),
@@ -169,6 +231,87 @@ def fetch_source(source: str, company: str, token: str) -> list[dict]:
             "url": item.get("hostedUrl", ""),
             "description": clean_html(" ".join([item.get("descriptionPlain", ""), item.get("additionalPlain", "")])),
         } for item in payload]
+    elif source == "Ashby":
+        payload = fetch_json(f"https://api.ashbyhq.com/posting-api/job-board/{token}?includeCompensation=true")
+        raw_jobs = []
+        for item in payload.get("jobs", []):
+            if not item.get("isListed", True):
+                continue
+            compensation = item.get("compensation") or {}
+            summary = compensation.get("scrapeableCompensationSalarySummary", "")
+            currency = ""
+            for component in compensation.get("summaryComponents", []):
+                if component.get("compensationType") == "Salary":
+                    currency = component.get("currencyCode", "")
+                    break
+            description = item.get("descriptionPlain") or clean_html(item.get("descriptionHtml", ""))
+            if summary:
+                description += f" Annual salary: {summary} {currency}."
+            location = item.get("location", "")
+            if item.get("isRemote") and "remote" not in location.lower():
+                location = f"Remote - {location}".strip(" -")
+            raw_jobs.append({
+                "title": item.get("title", ""),
+                "location": location,
+                "url": item.get("applyUrl") or item.get("jobUrl", ""),
+                "description": description,
+            })
+    elif source == "SmartRecruiters":
+        listing = fetch_json(f"https://api.smartrecruiters.com/v1/companies/{token}/postings?limit=100")
+        candidates = []
+        for item in listing.get("content", []):
+            location_data = item.get("location", {})
+            location = location_data.get("fullLocation") or ", ".join(filter(None, (
+                location_data.get("city"), location_data.get("region"), location_data.get("country"),
+            )))
+            if location_data.get("remote") and "remote" not in location.lower():
+                location = f"Remote - {location}"
+            prelim = {"location": location, "description": "", "title": item.get("name", "")}
+            if eligibility(prelim)[0]:
+                candidates.append((item, location))
+        raw_jobs = []
+        for item, location in candidates:
+            detail = fetch_json(item["ref"])
+            sections = detail.get("jobAd", {}).get("sections", {})
+            description = clean_html(" ".join(section.get("text", "") for section in sections.values()))
+            raw_jobs.append({
+                "title": detail.get("name", item.get("name", "")),
+                "location": location,
+                "url": detail.get("applyUrl") or detail.get("postingUrl", ""),
+                "description": description,
+            })
+    elif source == "Workday":
+        host, tenant, site = token["host"], token["tenant"], token["site"]
+        base = f"{host}/wday/cxs/{tenant}/{site}"
+        postings = []
+        for offset in range(0, 200, 20):
+            listing = fetch_json_post(f"{base}/jobs", {"appliedFacets": {}, "limit": 20, "offset": offset})
+            page = listing.get("jobPostings", [])
+            postings.extend(page)
+            if len(postings) >= listing.get("total", len(postings)) or len(page) < 20:
+                break
+        candidates = []
+        for item in postings:
+            prelim = {
+                "title": item.get("title", ""),
+                "location": item.get("locationsText", ""),
+                "description": "",
+            }
+            if eligibility(prelim)[0]:
+                candidates.append(item)
+        raw_jobs = []
+        for item in candidates:
+            path = item.get("externalPath", "")
+            detail = fetch_json(f"{base}{path}")
+            info = detail.get("jobPostingInfo", {})
+            raw_jobs.append({
+                "title": info.get("title", item.get("title", "")),
+                "location": info.get("location", item.get("locationsText", "")),
+                "url": info.get("externalUrl") or f"{host}/en-US/{site}{path}",
+                "description": clean_html(info.get("jobDescription", "")),
+            })
+    else:
+        return []
     return [{**item, "company": company, "source": source} for item in raw_jobs if item["url"]]
 
 
@@ -186,12 +329,18 @@ def profile_score(raw: dict, profile: dict) -> tuple[int, list[str]]:
 
 
 def sync_jobs(sources: Optional[List[str]] = None) -> dict:
-    sources = sources or ["Greenhouse", "Lever"]
+    sources = sources or ["Greenhouse", "Lever", "Ashby", "SmartRecruiters", "Workday"]
     configured = []
     if "Greenhouse" in sources:
         configured.extend(("Greenhouse", company, token) for company, token in GREENHOUSE_COMPANIES.items())
     if "Lever" in sources:
         configured.extend(("Lever", company, token) for company, token in LEVER_COMPANIES.items())
+    if "Ashby" in sources:
+        configured.extend(("Ashby", company, token) for company, token in ASHBY_COMPANIES.items())
+    if "SmartRecruiters" in sources:
+        configured.extend(("SmartRecruiters", company, token) for company, token in SMARTRECRUITERS_COMPANIES.items())
+    if "Workday" in sources:
+        configured.extend(("Workday", company, config) for company, config in WORKDAY_COMPANIES.items())
     found, errors = [], []
     with ThreadPoolExecutor(max_workers=8) as executor:
         futures = {executor.submit(fetch_source, *args): args for args in configured}
@@ -199,15 +348,23 @@ def sync_jobs(sources: Optional[List[str]] = None) -> dict:
             source, company, _ = futures[future]
             try:
                 found.extend(future.result())
-            except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as exc:
+            except (HTTPError, URLError, TimeoutError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
                 errors.append(f"{source}: {company} ({type(exc).__name__})")
     data = load_data()
     existing = {item.get("url", "").lower().rstrip("/") for item in data}
+    existing_signatures = {
+        (item.get("company", "").lower(), item.get("title", "").lower(), item.get("location", "").lower())
+        for item in data
+    }
     profile = load_profile()
+    exclusions = load_exclusions()
     added = 0
     for raw in found:
         normalized = raw["url"].lower().rstrip("/")
-        if normalized in existing:
+        signature = (raw["company"].lower(), raw["title"].lower(), raw["location"].lower())
+        if normalized in existing or signature in existing_signatures:
+            continue
+        if exclusion_match(raw, exclusions):
             continue
         eligible, salary, _ = eligibility(raw)
         if not eligible:
@@ -222,6 +379,7 @@ def sync_jobs(sources: Optional[List[str]] = None) -> dict:
             "applied": None, "follow_up": None, "salary": salary, "notes": "",
         })
         existing.add(normalized)
+        existing_signatures.add(signature)
         added += 1
     data.sort(key=lambda item: (item.get("score", 0), item.get("discovered", "")), reverse=True)
     save_data(data)
@@ -289,6 +447,9 @@ class Handler(SimpleHTTPRequestHandler):
         if parsed.path == "/api/profile":
             self.send_json(load_profile())
             return
+        if parsed.path == "/api/exclusions":
+            self.send_json(load_exclusions())
+            return
         if parsed.path == "/api/analytics":
             data = load_data()
             applied = [j for j in data if j.get("status") in {"Applied", "Interview", "Offer", "Rejected"}]
@@ -333,6 +494,22 @@ class Handler(SimpleHTTPRequestHandler):
             profile = {**load_profile(), **{key: str(value)[:20000] for key, value in payload.items() if key in DEFAULT_PROFILE}}
             PROFILE_PATH.write_text(json.dumps(profile, indent=2))
             self.send_json(profile)
+            return
+        if match := re.fullmatch(r"/api/jobs/([^/]+)/dismiss", parsed.path):
+            data = load_data()
+            job = next((item for item in data if item["id"] == match.group(1)), None)
+            if not job:
+                self.send_json({"error": "Not found"}, 404)
+                return
+            reason = str(payload.get("reason", "other")).lower()
+            detail = str(payload.get("detail", ""))[:300].strip()
+            job["status"] = "Dismissed"
+            job["dismissed_at"] = date.today().isoformat()
+            job["dismissal_reason"] = reason
+            job["dismissal_detail"] = detail
+            rule = add_exclusion(job, reason, detail)
+            save_data(data)
+            self.send_json({"job": job, "rule": rule})
             return
         if match := re.fullmatch(r"/api/jobs/([^/]+)/documents", parsed.path):
             data = load_json(DOCUMENTS_PATH, {})
