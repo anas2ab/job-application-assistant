@@ -33,6 +33,7 @@ DATA_PATH = ROOT / "applications.json"
 PROFILE_PATH = ROOT / "profile.json"
 DOCUMENTS_PATH = ROOT / "documents.json"
 EXCLUSIONS_PATH = ROOT / "exclusions.json"
+VALID_STATUSES = {"Review", "Tailoring", "Applied", "Interview", "Offer", "Rejected", "No response", "Dismissed"}
 
 DEFAULT_PROFILE = {
     "name": "",
@@ -452,7 +453,7 @@ class Handler(SimpleHTTPRequestHandler):
             return
         if parsed.path == "/api/analytics":
             data = load_data()
-            applied = [j for j in data if j.get("status") in {"Applied", "Interview", "Offer", "Rejected"}]
+            applied = [j for j in data if j.get("status") in {"Applied", "Interview", "Offer", "Rejected", "No response"}]
             responses = [j for j in applied if j.get("status") in {"Interview", "Offer", "Rejected"}]
             interviews = [j for j in applied if j.get("status") in {"Interview", "Offer"}]
             by_source = {}
@@ -535,11 +536,16 @@ class Handler(SimpleHTTPRequestHandler):
         if not job:
             self.send_json({"error": "Not found"}, 404)
             return
-        allowed = {"status", "follow_up", "notes"}
+        allowed = {"follow_up", "notes"}
         job.update({key: value for key, value in changes.items() if key in allowed})
+        requested_status = changes.get("status")
+        if requested_status in VALID_STATUSES:
+            job["status"] = requested_status
         if changes.get("status") == "Applied" and not job.get("applied"):
             job["applied"] = date.today().isoformat()
             job["follow_up"] = (date.today() + timedelta(days=7)).isoformat()
+        elif requested_status in {"Interview", "Offer", "Rejected", "No response"}:
+            job["follow_up"] = None
         save_data(data)
         self.send_json(job)
 

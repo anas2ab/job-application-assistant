@@ -12,7 +12,7 @@ async function loadJobs() {
   renderPipeline();
   renderDocuments();
   $("#discoverCount").textContent = discoverableJobs().length;
-  $("#applicationCount").textContent = jobs.filter(job => ["Applied","Interview","Offer","Rejected"].includes(job.status)).length;
+  $("#applicationCount").textContent = jobs.filter(job => ["Applied","Interview","Offer","Rejected","No response"].includes(job.status)).length;
   loadAnalytics();
 }
 
@@ -38,9 +38,10 @@ async function openJob(id) {
     <div class="match-line"><span>${job.score}% match</span><span>${safe(job.work_type)}</span><span>${safe(job.status)}</span></div>
     <div class="dialog-section"><h3>Why this is a strong match</h3>${reasons}</div>
     <div class="dialog-section"><h3>Tailored application</h3><div class="doc-tabs"><button class="active" data-doc="resume_summary">Resume</button><button data-doc="cover_letter">Cover letter</button><button data-doc="answers">Screening answers</button></div><textarea class="doc-copy" aria-label="Editable tailored document">${safe(docs.resume_summary)}</textarea><div class="doc-tools"><button class="save-doc">Save edits</button><a class="download-doc" href="/api/jobs/${job.id}/documents/resume.txt">Download .txt</a></div></div>
-  </div><div class="dialog-actions"><button class="dismiss">Dismiss</button><button class="track">Update status</button><a class="apply external" href="${safe(job.url)}" target="_blank" rel="noopener">Open application ↗</a></div>
+  </div><div class="dialog-actions"><button class="dismiss">Dismiss</button><select class="status-select" aria-label="Application status"><option>Review</option><option>Tailoring</option><option>Applied</option><option>Interview</option><option>Offer</option><option>Rejected</option><option>No response</option></select><button class="save-status">Save</button><a class="apply external" href="${safe(job.url)}" target="_blank" rel="noopener">Open application ↗</a></div>
   <div class="dismiss-panel hidden"><h3>Why isn’t this role a match?</h3><p>Your choice can prevent similar jobs from appearing in future searches.</p><select id="dismissReason"><option value="location">Location</option><option value="company">Company</option><option value="title">Role title</option><option value="keyword">Keyword</option><option value="other">Other — don’t create a rule</option></select><input id="dismissDetail" placeholder="Keyword or optional note"><div><button class="cancel-dismiss">Cancel</button><button class="confirm-dismiss">Dismiss job</button></div></div>`;
   const dialog = $("#jobDialog"); dialog.showModal();
+  $(".status-select").value = job.status === "Dismissed" ? "Review" : job.status;
   let activeDoc = "resume_summary";
   $$(".doc-tabs button").forEach(btn => btn.onclick = () => {
     $$(".doc-tabs button").forEach(b=>b.classList.remove("active")); btn.classList.add("active");
@@ -56,8 +57,8 @@ async function openJob(id) {
     await fetch(`/api/jobs/${id}/documents`, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({[activeDoc]:docs[activeDoc]})});
     toast("Document edits saved");
   };
-  $(".track").onclick = async () => {
-    const next = job.status === "Applied" ? "Interview" : "Applied";
+  $(".save-status").onclick = async () => {
+    const next = $(".status-select").value;
     const updated = await fetch(`/api/jobs/${id}`, {method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({status:next})}).then(r=>r.json());
     Object.assign(job, updated);
     dialog.close();
@@ -65,9 +66,10 @@ async function openJob(id) {
     renderPipeline();
     renderDocuments();
     $("#discoverCount").textContent = discoverableJobs().length;
-    $("#applicationCount").textContent = jobs.filter(item => ["Applied","Interview","Offer","Rejected"].includes(item.status)).length;
+    $("#applicationCount").textContent = jobs.filter(item => ["Applied","Interview","Offer","Rejected","No response"].includes(item.status)).length;
     loadAnalytics();
-    toast(next === "Applied" ? "Application tracked · removed from Discover" : "Interview recorded");
+    const messages={Applied:"Application tracked · removed from Discover",Interview:"Interview recorded",Offer:"Offer recorded",Rejected:"Rejection recorded","No response":"Marked as no response"};
+    toast(messages[next] || `Status updated to ${next}`);
   };
   $(".dismiss").onclick = () => $(".dismiss-panel").classList.remove("hidden");
   $(".cancel-dismiss").onclick = () => $(".dismiss-panel").classList.add("hidden");
@@ -90,9 +92,9 @@ async function openJob(id) {
 }
 
 function renderPipeline() {
-  const groups = {Review:[],Tailoring:[],Applied:[],Interview:[]};
-  jobs.forEach(j => { if (groups[j.status]) groups[j.status].push(j); });
-  $("#pipeline").innerHTML = Object.entries(groups).map(([name,items])=>`<div class="lane"><h3>${name} · ${items.length}</h3>${items.map(j=>`<div class="pipeline-job" data-id="${j.id}"><strong>${safe(j.company)}</strong><small>${safe(j.title)}</small>${j.follow_up?`<em>Follow up ${safe(j.follow_up)}</em>`:""}</div>`).join("")}</div>`).join("");
+  const groups = {Review:[],Tailoring:[],Applied:[],Interview:[],Closed:[]};
+  jobs.forEach(j => { if (["Rejected","No response","Offer"].includes(j.status)) groups.Closed.push(j); else if (groups[j.status]) groups[j.status].push(j); });
+  $("#pipeline").innerHTML = Object.entries(groups).map(([name,items])=>`<div class="lane"><h3>${name} · ${items.length}</h3>${items.map(j=>`<div class="pipeline-job" data-id="${j.id}"><strong>${safe(j.company)}</strong><small>${safe(j.title)}</small>${name==="Closed"?`<em>${safe(j.status)}</em>`:j.follow_up?`<em>Follow up ${safe(j.follow_up)}</em>`:""}</div>`).join("")}</div>`).join("");
   $$(".pipeline-job").forEach(row => row.onclick = () => openJob(row.dataset.id));
 }
 
